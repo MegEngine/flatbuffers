@@ -31,6 +31,26 @@
 #include <iomanip>
 #include <string>
 
+#if defined __UCLIBC__ && !defined _MSC_VER
+static long long strtoll_l(const char *nptr, char **endptr, size_t base, locale_t) {
+  return strtoll(nptr, endptr, base);
+
+}
+
+static unsigned long long strtoull_l(const char* s, char** end_ptr, int base, locale_t) {
+  return strtoull(s, end_ptr, base);
+}
+
+static double strtod_l(const char* s, char** end_ptr, locale_t) {
+  return strtod(s, end_ptr);
+}
+
+static float strtof_l(const char* s, char** end_ptr, locale_t) {
+  return strtof(s, end_ptr);
+}
+
+#endif
+
 namespace flatbuffers {
 
 // @locale-independent functions for ASCII characters set.
