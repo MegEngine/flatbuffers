@@ -23,6 +23,8 @@ from .compat import range_func
 from .compat import memoryview_type
 from .compat import import_numpy, NumpyRequiredForThisFeature
 
+import warnings
+
 np = import_numpy()
 ## @file
 ## @addtogroup flatbuffers_python_api
@@ -75,6 +77,13 @@ class BuilderNotFinishedError(RuntimeError):
     """
     pass
 
+class EndVectorLengthMismatched(RuntimeError):
+    """
+    The number of elements passed to EndVector does not match the number 
+    specified in StartVector.
+    """
+    pass
+
 
 # VtableMetadataFields is the count of metadata fields in each vtable.
 VtableMetadataFields = 2
@@ -103,7 +112,7 @@ class Builder(object):
 
     ## @cond FLATBUFFERS_INTENRAL
     __slots__ = ("Bytes", "current_vtable", "head", "minalign", "objectEnd",
-                 "vtables", "nested", "forceDefaults", "finished")
+                 "vtables", "nested", "forceDefaults", "finished", "vectorNumElems")
 
     """Maximum buffer size constant, in bytes.
 
@@ -113,7 +122,7 @@ class Builder(object):
     MAX_BUFFER_SIZE = 2**31
     ## @endcond
 
-    def __init__(self, initialSize):
+    def __init__(self, initialSize=1024):
         """Initializes a Builder of size `initial_size`.
 
         The internal buffer is grown as needed.
@@ -371,20 +380,29 @@ class Builder(object):
 
         self.assertNotNested()
         self.nested = True
+        self.vectorNumElems = numElems
         self.Prep(N.Uint32Flags.bytewidth, elemSize*numElems)
         self.Prep(alignment, elemSize*numElems)  # In case alignment > int.
         return self.Offset()
     ## @endcond
 
-    def EndVector(self, vectorNumElems):
+    def EndVector(self, numElems = None):
         """EndVector writes data necessary to finish vector construction."""
 
         self.assertNested()
         ## @cond FLATBUFFERS_INTERNAL
         self.nested = False
         ## @endcond
+               
+        if numElems:
+            warnings.warn("numElems is deprecated.", 
+                          DeprecationWarning, stacklevel=2)
+            if numElems != self.vectorNumElems:
+                raise EndVectorLengthMismatched();
+
         # we already made space for this, so write without PrependUint32
-        self.PlaceUOffsetT(vectorNumElems)
+        self.PlaceUOffsetT(self.vectorNumElems)
+        self.vectorNumElems = None
         return self.Offset()
 
     def CreateString(self, s, encoding='utf-8', errors='strict'):
@@ -411,7 +429,8 @@ class Builder(object):
         ## @endcond
         self.Bytes[self.Head():self.Head()+l] = x
 
-        return self.EndVector(len(x))
+        self.vectorNumElems = len(x)
+        return self.EndVector()
 
     def CreateByteVector(self, x):
         """CreateString writes a byte vector."""
@@ -432,7 +451,8 @@ class Builder(object):
         ## @endcond
         self.Bytes[self.Head():self.Head()+l] = x
 
-        return self.EndVector(len(x))
+        self.vectorNumElems = len(x)
+        return self.EndVector()
 
     def CreateNumpyVector(self, x):
         """CreateNumpyVector writes a numpy array into the buffer."""
@@ -466,8 +486,9 @@ class Builder(object):
 
         # tobytes ensures c_contiguous ordering
         self.Bytes[self.Head():self.Head()+l] = x_lend.tobytes(order='C')
-        
-        return self.EndVector(x.size)
+
+        self.vectorNumElems = x.size
+        return self.EndVector()
 
     ## @cond FLATBUFFERS_INTERNAL
     def assertNested(self):
@@ -514,9 +535,16 @@ class Builder(object):
         """Finish finalizes a buffer, pointing to the given `rootTable`."""
         N.enforce_number(rootTable, N.UOffsetTFlags)
 
+        prepSize = N.UOffsetTFlags.bytewidth
+        if file_identifier is not None:
+            prepSize += N.Int32Flags.bytewidth
+        if sizePrefix:
+            prepSize += N.Int32Flags.bytewidth
+        self.Prep(self.minalign, prepSize)
+
         if file_identifier is not None:
             self.Prep(N.UOffsetTFlags.bytewidth, encode.FILE_IDENTIFIER_LENGTH)
-            
+
             # Convert bytes object file_identifier to an array of 4 8-bit integers,
             # and use big-endian to enforce size compliance.
             # https://docs.python.org/2/library/struct.html#format-characters
@@ -524,7 +552,7 @@ class Builder(object):
             for i in range(encode.FILE_IDENTIFIER_LENGTH-1, -1, -1):
                 # Place the bytes of the file_identifer in reverse order:
                 self.Place(file_identifier[i], N.Uint8Flags)
-                
+
         self.PrependUOffsetTRelative(rootTable)
         if sizePrefix:
             size = len(self.Bytes) - self.Head()
