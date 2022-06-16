@@ -358,14 +358,12 @@ else()
       -Wno-unused-parameter
       -Wold-style-cast
       -Wimplicit-fallthrough
-      -Wextra-semi
       -fsigned-char
       -Wnon-virtual-dtor
 
       $<$<CXX_COMPILER_ID:CLANG>:
         $<$<VERSION_GREATER:$<CXX_COMPILER_VERSION>,3.8>:
           -Wimplicit-fallthrough
-          -Wextra-semi
           -Werror=unused-private-field
         >
       >
