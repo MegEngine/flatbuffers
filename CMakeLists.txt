@@ -357,7 +357,6 @@ else()
       -Wextra 
       -Wno-unused-parameter
       -Wold-style-cast
-      -Wimplicit-fallthrough
       -fsigned-char
       -Wnon-virtual-dtor
 
